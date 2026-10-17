@@ -40,6 +40,15 @@ vsync_2:
 
 skip_ground_collision:
 
+    ; --- OBSTACLE PHYSICS ---
+    mov ax, [obs_x]
+    sub ax, [obs_speed]        ; Move obstacle left
+    cmp ax, -8                  ; Has it fully left the screen?
+    jg save_obs_x
+    mov ax, 320                 ; Respawn at the right edge
+save_obs_x:
+    mov [obs_x], ax
+
     ; --- INPUT / CONTROLS SECTION ---
 read_keyboard:
     mov ah, 01h     ; Check if key is pressed in buffer
@@ -62,7 +71,7 @@ read_keyboard:
 near_render:
     jmp render_scene   
 
-; --- NEAR ROUTING TABLE (Resolves all range limitations) ---
+; --- NEAR ROUTING TABLE ---
 near_exit:
     jmp exit_game
 near_jump:
@@ -95,9 +104,9 @@ save_left:
 move_right:
     mov ax, [player_x]
     add ax, 4          
-    cmp ax, 319
+    cmp ax, 312        ; 320 - 8 (width of player block)
     jle save_right
-    mov ax, 319        
+    mov ax, 312        
 save_right:
     mov [player_x], ax
     jmp render_scene
@@ -124,17 +133,56 @@ draw_ground:
     inc di
     loop draw_ground
 
-    ; 3. Draw Player Pixel inside the Buffer
+    ; 3. Draw Player 8x8 Box Character (Bright Red)
     mov ax, 320
     mov dx, [player_y] 
     mul dx             
     add ax, [player_x] 
     mov di, db_buffer
-    add di, ax         
-    mov al, 0Ch        ; Color 12 = Bright Red
-    mov [es:di], al    
+    add di, ax          
+    
+    mov al, 0Ch         ; Color 12 = Bright Red
+    mov dx, 8           
+draw_player_row:
+    mov cx, 8           
+draw_player_pixel:
+    mov [es:di], al
+    inc di
+    loop draw_player_pixel
+    add di, 320 - 8     
+    dec dx
+    jnz draw_player_row
 
-    ; 4. Blit Buffer to VRAM (Copy db_buffer to 0A000h)
+    ; 4. Draw Obstacle 8x8 Box Character (Green)
+    ; Check if obstacle is partially on screen (x >= 0)
+    mov ax, [obs_x]
+    cmp ax, 0
+    jl skip_obs_render  ; Skip simple rendering if partially off-screen left
+    cmp ax, 312
+    jg skip_obs_render  ; Skip if partially off-screen right
+    
+    mov ax, 320
+    mov dx, [obs_y]
+    mul dx
+    add ax, [obs_x]
+    mov di, db_buffer
+    add di, ax
+
+    mov al, 02h         ; Color 2 = Green
+    mov dx, 8
+draw_obs_row:
+    mov cx, 8
+draw_obs_pixel:
+    mov [es:di], al
+    inc di
+    loop draw_obs_pixel
+    add di, 320 - 8
+    dec dx
+    jnz draw_obs_row
+
+skip_obs_render:
+
+    ; 5. Blit Buffer to VRAM (Copy db_buffer to 0A000h)
     push ds             
     mov ax, cs          
     mov ds, ax          
@@ -164,6 +212,11 @@ section .data
     velocity_y  dw 0
     gravity     dw 1   
     is_jumping  db 0   
+
+    ; Obstacle Variables
+    obs_x       dw 300
+    obs_y       dw 160 ; Placed right on the ground floor
+    obs_speed   dw 3   ; Moving 3 pixels per frame
 
 section .bss
     db_buffer   resb 320*200 
